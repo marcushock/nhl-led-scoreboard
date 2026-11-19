@@ -105,6 +105,25 @@ class SchedulerManager:
         jobs = self.list_jobs()
         return [j["id"] for j in jobs if j.get("id")]
 
+    def _state_includes(self, board_name: str) -> bool:
+        """True when any display state is configured to show this board."""
+        config = self.data.config
+        for boards in (
+            config.boards_off_day,
+            config.boards_scheduled,
+            config.boards_intermission,
+            config.boards_post_game,
+        ):
+            if boards and board_name in boards:
+                return True
+        return False
+
+    def _remove_job_if_present(self, job_id: str, existing_ids: List[str]) -> None:
+        if job_id not in existing_ids:
+            return
+        self.remove_job(job_id)
+        existing_ids.remove(job_id)
+
     def _job_exists(self, job_id: str, existing_ids: Optional[List[str]] = None) -> bool:
         """Check whether a job with the given id already exists in the scheduler."""
         if existing_ids is None:
@@ -272,11 +291,11 @@ class SchedulerManager:
             else:
                 sb_logger.debug(f"Weather forecast already scheduled (id={job_id}), skipping add.")
 
-        # stats leaders
-        # we could add conditional logic to only pull this if its enabled
-        # but for now we will just pull the data and cache it.  It's minimal.
+        # stats leaders — one request per category, so only run when a state shows the board
         job_id = self.KNOWN_JOB_IDS["statsLeadersWorker"]
-        if not self._job_exists(job_id, existing_ids):
+        if not self._state_includes("stats_leaders"):
+            self._remove_job_if_present(job_id, existing_ids)
+        elif not self._job_exists(job_id, existing_ids):
             # Read config from central config if user defined it, otherwise use board defaults
             stats_raw = self.data.config._boards_raw.get("stats_leaders", {})
             if not stats_raw:
@@ -300,9 +319,10 @@ class SchedulerManager:
             sb_logger.debug(f"Stats leaders worker already scheduled (id={job_id}), skipping add.")
 
         # standings
-        # Fetches standings data in the background and caches it
         job_id = self.KNOWN_JOB_IDS["standingsWorker"]
-        if not self._job_exists(job_id, existing_ids):
+        if not self._state_includes("standings"):
+            self._remove_job_if_present(job_id, existing_ids)
+        elif not self._job_exists(job_id, existing_ids):
             StandingsWorker(
                 self.data,
                 self.data.scheduler,
@@ -328,10 +348,11 @@ class SchedulerManager:
         else:
             sb_logger.debug(f"Games worker already scheduled (id={job_id}), skipping add.")
 
-        # team schedule worker
-        # Fetches previous/next game data for preferred teams (used by team_summary board)
+        # team schedule worker — one previous/next request per preferred team
         job_id = self.KNOWN_JOB_IDS["teamScheduleWorker"]
-        if not self._job_exists(job_id, existing_ids):
+        if not self._state_includes("team_summary"):
+            self._remove_job_if_present(job_id, existing_ids)
+        elif not self._job_exists(job_id, existing_ids):
             TeamScheduleWorker(
                 self.data,
                 self.data.scheduler,

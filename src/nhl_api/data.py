@@ -229,6 +229,17 @@ def get_series_record(series_code: str, season: str):
 # ============================================================================
 
 
+def games_from_score_payload(raw_data) -> List[Game]:
+    """Build Game objects from one score-endpoint payload.
+
+    Callers that already have the payload should use this instead of get_games(),
+    which requests the same URL again.
+    """
+    if not raw_data:
+        return []
+    return [Game.from_dict(game_data) for game_data in raw_data.get('games', [])]
+
+
 def get_games(date_obj: date) -> List[Game]:
     """
     Get all games for a specific date as structured Game objects.
@@ -250,8 +261,7 @@ def get_games(date_obj: date) -> List[Game]:
         ...     if game.is_live:
         ...         print(f"  LIVE: {game.score}")
     """
-    raw_data = client.get_score_details(date_obj)
-    return [Game.from_dict(game_data) for game_data in raw_data.get('games', [])]
+    return games_from_score_payload(client.get_score_details(date_obj))
 
 
 def get_game(game_id: int) -> Game:

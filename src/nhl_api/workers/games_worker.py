@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
 
-from nhl_api.data import get_games, get_score_details
+from nhl_api.data import games_from_score_payload, get_score_details
 from nhl_api.models import Game
 from nhl_api.workers.base_worker import BaseWorker
 
@@ -60,19 +60,18 @@ class GamesWorker(BaseWorker[GamesData]):
         )
 
     def fetch_data(self) -> Optional[GamesData]:
-        """Fetch today's games in both raw and structured formats."""
+        """Fetch today's games once, in both raw and structured form.
+
+        get_games() requests the same score URL, so the structured list is
+        built from the payload already in hand.
+        """
         date_obj = self.data.date()
-
-        # Fetch raw data for backward compatibility with GameSummaryBoard
         raw_data = get_score_details(date_obj)
-
-        # Fetch structured Game objects for new code
-        games = get_games(date_obj)
 
         if raw_data:
             return GamesData(
                 raw=raw_data.get('games', []),
-                structured=games,
+                structured=games_from_score_payload(raw_data),
                 date=date_obj
             )
         return None
