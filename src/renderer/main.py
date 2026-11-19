@@ -10,6 +10,7 @@ from boards.clock import Clock
 from boards.stanley_cup_champions import StanleyCupChampions
 from data.scoreboard import Scoreboard
 from renderer.goal import GoalRenderer
+from renderer.live_frame import live_frame_key
 from renderer.penalty import PenaltyRenderer
 from renderer.scoreboard import ScoreboardRenderer
 from utils import get_file
@@ -29,6 +30,9 @@ class MainRenderer:
         self.sbQueue = sbQueue
         self.sog_display_frequency = data.config.sog_display_frequency
         self.alternate_data_counter = 1
+        self._scoreboard_renderer = None
+        self._last_live_key = None
+        self._display_dirty = True
 
     def sync_boards_with_config(self):
         """
@@ -44,6 +48,9 @@ class MainRenderer:
             self.data.config.boards_post_game,
         ]
         self.boards.board_manager.sync_with_config(config_board_lists)
+        self._display_dirty = True
+        self._scoreboard_renderer = None
+        self._last_live_key = None
         debug.info("MainRenderer: Synced boards with config")
 
     def render(self):
@@ -151,6 +158,7 @@ class MainRenderer:
                         self.data.pb_trigger = False
                     #Display the board from the config
                     self.boards._pb_board(self.data, self.matrix, self.sleepEvent)
+                    self._display_dirty = True
 
                 # Display the Weather Alert board
                 if self.data.wx_alert_interrupt:
@@ -158,6 +166,7 @@ class MainRenderer:
                     self.data.wx_alert_interrupt = False
                     #Display the board from the config
                     self.boards._wx_alert(self.data, self.matrix, self.sleepEvent)
+                    self._display_dirty = True
 
                 # Display the screensaver board
                 if self.data.screensaver:
@@ -166,6 +175,7 @@ class MainRenderer:
                         #self.data.wx_alert_interrupt = False
                         #Display the board from the config
                         self.boards._screensaver(self.data, self.matrix, self.sleepEvent)
+                        self._display_dirty = True
                     else:
                         self.data.pb_trigger = False
 
@@ -189,11 +199,26 @@ class MainRenderer:
                         qItem = ["{0}/live/status".format(self.data.config.mqtt_main_topic),qPayload]
                         self.sbQueue.put_nowait(qItem)
 
-                    sbrenderer = ScoreboardRenderer(self.data, self.matrix, self.scoreboard)
+                    sbrenderer = self._scoreboard_renderer_for(self.scoreboard)
 
-                    self.check_new_penalty()
-                    self.check_new_goals()
-                    self.__render_live(sbrenderer)
+                    penalty_obscured = self.check_new_penalty()
+                    goal_obscured = self.check_new_goals()
+                    obscured = penalty_obscured or goal_obscured
+                    show_sog = self.alternate_data_counter % self.sog_display_frequency == 0
+                    self.alternate_data_counter += 1
+                    frame_key = live_frame_key(self.scoreboard, show_sog)
+                    if (
+                        obscured
+                        or self._display_dirty
+                        or self.scoreboard.intermission
+                        or frame_key != self._last_live_key
+                    ):
+                        sbrenderer.show_SOG = show_sog
+                        self.__render_live(sbrenderer)
+                        self._last_live_key = frame_key
+                        self._display_dirty = False
+                    else:
+                        debug.debug("Live scoreboard unchanged")
                     if self.scoreboard.intermission:
                         debug.info("Main event is in Intermission")
 
@@ -204,6 +229,7 @@ class MainRenderer:
                         self.check_new_penalty()
                         self.check_new_goals()
                         self.boards._intermission(self.data, self.matrix,self.sleepEvent)
+                        self._display_dirty = True
                     else:
                         self.sleepEvent.wait(self.refresh_rate)
 
@@ -215,7 +241,7 @@ class MainRenderer:
                         qItem = ["{0}/state".format(self.data.config.mqtt_main_topic),qPayload]
                         self.sbQueue.put_nowait(qItem)
 
-                    sbrenderer = ScoreboardRenderer(self.data, self.matrix, self.scoreboard)
+                    sbrenderer = self._scoreboard_renderer_for(self.scoreboard)
                     self.check_new_goals()
                     """ if self.data.isPlayoff and self.data.stanleycup_round:
                         self.data.check_stanley_cup_champion()
@@ -226,12 +252,13 @@ class MainRenderer:
                     self.sleepEvent.wait(self.refresh_rate)
                     if not self.goal_team_cache:
                         self.boards._post_game(self.data, self.matrix,self.sleepEvent)
+                        self._display_dirty = True
 
                 elif self.scoreboard.is_final:
                     """ Post Game state """
                     debug.info("FINAL")
 
-                    sbrenderer = ScoreboardRenderer(self.data, self.matrix, self.scoreboard)
+                    sbrenderer = self._scoreboard_renderer_for(self.scoreboard)
                     self.check_new_goals()
                     """ if self.data.isPlayoff and self.data.stanleycup_round:
                         self.data.check_stanley_cup_champion()
@@ -242,27 +269,30 @@ class MainRenderer:
                     self.sleepEvent.wait(self.refresh_rate)
                     if not self.goal_team_cache:
                         self.boards._post_game(self.data, self.matrix,self.sleepEvent)
+                        self._display_dirty = True
 
                 elif self.scoreboard.is_scheduled:
                     """ Pre-game state """
                     debug.info("Game is Scheduled")
                     #blocks the screensaver from running if game is live or scheduled
                     self.data.screensaver_livegame = True
-                    sbrenderer = ScoreboardRenderer(self.data, self.matrix, self.scoreboard)
+                    sbrenderer = self._scoreboard_renderer_for(self.scoreboard)
                     self.__render_pregame(sbrenderer)
                     #sleep(self.refresh_rate)
                     self.sleepEvent.wait(self.refresh_rate)
                     self.boards._scheduled(self.data, self.matrix,self.sleepEvent)
+                    self._display_dirty = True
 
 
                 elif self.scoreboard.is_irregular:
                     """ Irregular game state (postponed, cancelled, suspended, TBD) """
                     debug.info("Game is irregular")
-                    sbrenderer = ScoreboardRenderer(self.data, self.matrix, self.scoreboard)
+                    sbrenderer = self._scoreboard_renderer_for(self.scoreboard)
                     self.__render_irregular(sbrenderer)
                     #sleep(self.refresh_rate)
                     self.sleepEvent.wait(self.refresh_rate)
                     self.boards._scheduled(self.data, self.matrix,self.sleepEvent)
+                    self._display_dirty = True
                 else:
                     print("somethin' really goofy")
                     self.sleepEvent.wait(self.refresh_rate)
@@ -307,14 +337,24 @@ class MainRenderer:
             self.sbQueue.put_nowait(qItem)
 
 
+    def _scoreboard_renderer_for(self, scoreboard):
+        """Reuse logos and the gradient while the same two teams are on screen."""
+        renderer = self._scoreboard_renderer
+        home = scoreboard.home_team.abbrev
+        away = scoreboard.away_team.abbrev
+        if renderer is None or renderer.home_abbrev != home or renderer.away_abbrev != away:
+            renderer = ScoreboardRenderer(self.data, self.matrix, scoreboard)
+            self._scoreboard_renderer = renderer
+            self._last_live_key = None
+        else:
+            renderer.scoreboard = scoreboard
+            renderer.show_power_play_details = self.data.config.show_power_play_details
+        return renderer
+
     def __render_live(self, sbrenderer):
         debug.info("Showing Main Event")
         self.matrix.clear()
-        sbrenderer.show_SOG = False
-        if self.alternate_data_counter % self.sog_display_frequency == 0:
-            sbrenderer.show_SOG = True
         sbrenderer.render()
-        self.alternate_data_counter += 1
 
     def __render_irregular(self, sbrenderer):
         debug.info("Showing Irregular")
@@ -324,6 +364,7 @@ class MainRenderer:
 
     def check_new_goals(self):
         debug.debug("Check new goal")
+        obscured = False
         pref_team_only = self.data.config.goal_anim_pref_team_only
         away_id = self.scoreboard.away_team.id
         away_name = self.scoreboard.away_team.name
@@ -336,6 +377,7 @@ class MainRenderer:
         # Display goal details that are cached if there is any
         # GoalRenderer(self.data, self.matrix, self.sleepEvent, self.scoreboard.away_team).render()
         if self.goal_team_cache:
+            obscured = True
             try:
                 while self.goal_team_cache:
                     # create a goal object first to see if there are any missing data
@@ -355,7 +397,7 @@ class MainRenderer:
             self.away_score = away_goals
             self.goal_team_cache.append("away")
             if away_id not in self.data.pref_teams and pref_team_only:
-                return
+                return obscured
 
             if self.data.config.mqtt_enabled:
                 # Add goal onto queue
@@ -365,13 +407,14 @@ class MainRenderer:
 
             # run the goal animation
             self._draw_event_animation("goal", away_id, away_name)
+            obscured = True
 
 
         if home_score < home_goals:
             self.home_score = home_goals
             self.goal_team_cache.append("home")
             if home_id not in self.data.pref_teams and pref_team_only:
-                return
+                return obscured
             if self.data.config.mqtt_enabled:
                 # Add goal onto queue
                 qPayload = {"home": True, "team": home_name, "preferred_team": pref_team_only,"score": self.home_score}
@@ -380,9 +423,12 @@ class MainRenderer:
 
             # run the goal animation
             self._draw_event_animation("goal", home_id, home_name)
+            obscured = True
+        return obscured
 
     def check_new_penalty(self):
         debug.debug("Check new penalty")
+        obscured = False
 
         #pref_team_only = self.data.config.penalty_anim_pref_team_only
         away_id = self.scoreboard.away_team.id
@@ -395,6 +441,7 @@ class MainRenderer:
         h_penalties = self.home_penalties
         # Display goal details that are cached if there is any
         if self.penalties_team_cache:
+            obscured = True
             try:
                 while self.penalties_team_cache:
                     # create a goal object first to see if there are any missing data
@@ -418,6 +465,7 @@ class MainRenderer:
             #    return
             # run the penalty animation
             self._draw_event_animation("penalty", away_id, away_name)
+            obscured = True
 
         if len(h_penalties) < len(home_data_penalties):
             self.home_penalties = home_data_penalties
@@ -426,6 +474,8 @@ class MainRenderer:
             #    return
             # run the penalty animation
             self._draw_event_animation("penalty", home_id, home_name)
+            obscured = True
+        return obscured
 
     def _draw_event_animation(self, event, id=14, name="test"):
         preferred_team_only = self.data.config.goal_anim_pref_team_only

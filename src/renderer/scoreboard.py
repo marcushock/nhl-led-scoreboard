@@ -20,11 +20,13 @@ class ScoreboardRenderer:
         self.show_SOG = shot_on_goal
         self.show_power_play_details = data.config.show_power_play_details
 
+        self.home_abbrev = self.scoreboard.home_team.abbrev
+        self.away_abbrev = self.scoreboard.away_team.abbrev
         self.home_logo_renderer = LogoRenderer(
             self.matrix,
             data.config,
             self.layout.home_logo,
-            self.scoreboard.home_team.abbrev,
+            self.home_abbrev,
             'scoreboard',
             'home'
         )
@@ -32,10 +34,14 @@ class ScoreboardRenderer:
             self.matrix,
             data.config,
             self.layout.away_logo,
-            self.scoreboard.away_team.abbrev,
+            self.away_abbrev,
             'scoreboard',
             'away'
         )
+        gradient_file = 'assets/images/64x32_scoreboard_center_gradient.png'
+        if self.matrix.height == 64:
+            gradient_file = 'assets/images/128x64_scoreboard_center_gradient.png'
+        self.gradient = Image.open(get_file(gradient_file))
 
     def render(self):
         self.matrix.clear()
@@ -52,13 +58,7 @@ class ScoreboardRenderer:
         self.matrix.draw_rectangle(((display_width/2),0), ((display_width),display_height), (0,0,0))
         self.home_logo_renderer.render()
 
-        gradient = Image.open(get_file('assets/images/64x32_scoreboard_center_gradient.png'))
-
-        # For 128x64 use the bigger gradient image.
-        if display_height == 64:
-            gradient = Image.open(get_file('assets/images/128x64_scoreboard_center_gradient.png'))
-
-        self.matrix.draw_image((display_width/2,0), gradient, align="center")
+        self.matrix.draw_image((display_width/2,0), self.gradient, align="center")
 
         if self.scoreboard.is_scheduled:
             self.draw_scheduled()
