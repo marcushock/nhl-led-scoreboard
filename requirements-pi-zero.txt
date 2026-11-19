@@ -1,0 +1,31 @@
+# Smaller install for the original Pi Zero / Zero W (armv6, 512MB, one core).
+# pandas and bottleneck are not imported by the scoreboard and pull in a numpy
+# build that will not finish in 512MB. RGBMatrixEmulator is the on-screen/browser
+# driver; the Zero uses the compiled rgbmatrix library instead.
+# numpy comes from the python3-numpy apt package via the venv's --system-site-packages.
+tzlocal
+cairoSVG>=2.6.0
+ephem
+fastjsonschema>=2.14.4
+geopy
+ipinfo
+gpiozero
+noaa-sdk>=0.1.18
+python-tsl2591==0.2.0
+regex>=2020.4.4
+APScheduler
+lastversion>=1.1.6
+nameparser>=1.0.6
+pillow==12.1.0
+dbus-python
+iso6709
+packaging>=25.0
+paho-mqtt>=2.1.0
+rich
+richcolorlog==1.44.12
+diskcache
+backoff
+env-canada>=0.12.2
+httpx==0.28.1
+watchdog
+flask

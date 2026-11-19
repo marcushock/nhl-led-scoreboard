@@ -14,6 +14,7 @@ from iso6709 import Location
 import platform
 import uuid
 import driver
+from pi_hardware import resolve_matrix_timing
 
 debug = logging.getLogger("scoreboard")
 
@@ -194,8 +195,8 @@ def args():
     parser.add_argument("--led-chain", action="store", help="Daisy-chained boards. (Default: 1)", default=1, type=int)
     parser.add_argument("--led-parallel", action="store",
                         help="For Plus-models or RPi2: parallel chains. 1..3. (Default: 1)", default=1, type=int)
-    parser.add_argument("--led-pwm-bits", action="store", help="Bits used for PWM. Range 1..11. (Default: 11)",
-                        default=11, type=int)
+    parser.add_argument("--led-pwm-bits", action="store", help="Bits used for PWM. Range 1..11. (Default: 11, or 7 on a Pi Zero / Pi 1)",
+                        default=None, type=int)
     parser.add_argument("--led-brightness", action="store", help="Sets brightness level. Range: 1..100. (Default: 100)",
                         default=100, type=int)
     parser.add_argument("--led-gpio-mapping", help="Hardware Mapping: regular, adafruit-hat, adafruit-hat-pwm",
@@ -204,17 +205,19 @@ def args():
                         help="Progressive or interlaced scan. 0 = Progressive, 1 = Interlaced. (Default: 1)", default=1,
                         choices=range(2), type=int)
     parser.add_argument("--led-pwm-lsb-nanoseconds", action="store",
-                        help="Base time-unit for the on-time in the lowest significant bit in nanoseconds. (Default: 130)",
-                        default=130, type=int)
+                        help="Base time-unit for the on-time in the lowest significant bit in nanoseconds. (Default: 130, or 300 on a Pi Zero / Pi 1)",
+                        default=None, type=int)
     parser.add_argument("--led-pwm-dither-bits", action="store",
                         help="Time dithering of lower bits (Default: 0)",
                         default=0, type=int)
     parser.add_argument("--led-show-refresh", action="store_true",
                         help="Shows the current refresh rate of the LED panel.")
     parser.add_argument("--led-slowdown-gpio", action="store",
-                        help="Slow down writing to GPIO. Range: 0..4. (Default: 1)", choices=range(5), type=int)
+                        help="Slow down writing to GPIO. Range: 0..4. (Default: 1, or 0 on a Pi Zero / Pi 1)", choices=range(5), type=int)
     parser.add_argument("--led-limit-refresh", action="store",
-                        help="Limit refresh rate to this frequency in Hz. Useful to keep a constant refresh rate on loaded system. 0=no limit. Default: 0", default=0, type=int)
+                        help="Limit refresh rate to this frequency in Hz. Useful to keep a constant refresh rate on loaded system. 0=no limit. Default: 0 (100 on a Pi Zero / Pi 1)", default=0, type=int)
+    parser.add_argument("--led-no-pi-tune", action="store_true",
+                        help="On a Pi Zero / Pi 1, keep stock matrix timing instead of the low-CPU defaults.")
     parser.add_argument("--led-no-hardware-pulse", action="store", help="Don't use hardware pin-pulse generation.")
     parser.add_argument("--led-rgb-sequence", action="store",
                         help="Switch if your matrix has led colors swapped. (Default: RGB)", default="RGB", type=str)
@@ -259,13 +262,16 @@ def led_matrix_options(args):
     options.parallel = args.led_parallel
     options.row_address_type = args.led_row_addr_type
     options.multiplexing = args.led_multiplexing
-    options.pwm_bits = args.led_pwm_bits
+    timing = resolve_matrix_timing(args)
+    if timing["note"]:
+        debug.info(timing["note"])
+    options.pwm_bits = timing["pwm_bits"]
     options.scan_mode = args.led_scan_mode
     options.brightness = args.led_brightness
-    options.pwm_lsb_nanoseconds = args.led_pwm_lsb_nanoseconds
+    options.pwm_lsb_nanoseconds = timing["pwm_lsb_nanoseconds"]
     options.led_rgb_sequence = args.led_rgb_sequence
     options.panel_type = args.led_panel_type
-    options.limit_refresh_rate_hz = args.led_limit_refresh
+    options.limit_refresh_rate_hz = timing["limit_refresh_hz"]
 
     try:
         options.pixel_mapper_config = args.led_pixel_mapper
@@ -282,8 +288,8 @@ def led_matrix_options(args):
     if args.led_show_refresh:
         options.show_refresh_rate = 1
 
-    if args.led_slowdown_gpio != None:
-        options.gpio_slowdown = args.led_slowdown_gpio
+    if timing["gpio_slowdown"] is not None:
+        options.gpio_slowdown = timing["gpio_slowdown"]
 
     if args.led_no_hardware_pulse:
         options.disable_hardware_pulsing = True

@@ -230,16 +230,27 @@ if git pull --rebase --stat origin main; then
 
     #Comment out if running from repositories scripts/sbtools directory
     #printf "${BLUE}%s \`${BOLD}%s${RESET}${BLUE}\`${RESET}\n" "You can see the changelog anytime with" "sb-changelog"
-   if [[ -a requirements.txt ]]; then
-       #Check to see if the requirements.txt has changed, if so, run the pip3 install -r requirements.txt again
-       if ! git diff -s --exit-code HEAD "$last_commit" requirements.txt; then
-          printf "${GREEN}%s${RESET}\n" "New python library requirements for this version, installing now"
+   REQ_FILE="requirements.txt"
+   if [[ "$ARCH" == "armv6l" && -f requirements-pi-zero.txt ]]; then
+       REQ_FILE="requirements-pi-zero.txt"
+   fi
+   if [[ -a "$REQ_FILE" ]]; then
+       #Check to see if the requirements file has changed, if so, run pip install again
+       req_changed=false
+       if ! git diff -s --exit-code HEAD "$last_commit" "$REQ_FILE"; then
+          req_changed=true
+       fi
+       if [[ "$REQ_FILE" != "requirements.txt" ]] && ! git diff -s --exit-code HEAD "$last_commit" requirements.txt; then
+          req_changed=true
+       fi
+       if [[ "$req_changed" == true ]]; then
+          printf "${GREEN}%s${RESET}\n" "New python library requirements for this version, installing now ($REQ_FILE)"
           if [ -n "$VIRTUAL_ENV" ]; then
                 # Update pip in the virtual environment
                 printf "${GREEN}%s${RESET}\n" "Upgrading pip in the virtual environment..."
                 $VIRTUAL_ENV/bin/pip3 install --upgrade pip
                 # Install the new requirements
-                $VIRTUAL_ENV/bin/pip3 install -r requirements.txt
+                $VIRTUAL_ENV/bin/pip3 install -r "$REQ_FILE"
           else
              printf "${YELLOW}%s${RESET}\n" "Python virtual environment not active. Skipping dependency installation."
           fi
@@ -247,21 +258,32 @@ if git pull --rebase --stat origin main; then
           printf "${YELLOW}%s${RESET}\n" "No new python libraries required to be installed."
        fi
     else
-         printf "${RED}%s${RESET}\n" "No python requirements.txt found"
+         printf "${RED}%s${RESET}\n" "No python $REQ_FILE found"
     fi
 
     #Check to see if the apt-requirements has changed, if so, run the sudo aptfile apt-requirements again
-    if [[ -a apt-requirements ]]; then
-       if ! git diff -s --exit-code HEAD "$last_commit" apt-requirements; then
-          printf "${GREEN}%s${RESET}\n" "New apt requirements for this version, installing now"
+    APT_FILE="apt-requirements"
+    if [[ "$ARCH" == "armv6l" && -f apt-requirements-pi-zero ]]; then
+        APT_FILE="apt-requirements-pi-zero"
+    fi
+    if [[ -a "$APT_FILE" ]]; then
+       apt_changed=false
+       if ! git diff -s --exit-code HEAD "$last_commit" "$APT_FILE"; then
+          apt_changed=true
+       fi
+       if [[ "$APT_FILE" != "apt-requirements" ]] && ! git diff -s --exit-code HEAD "$last_commit" apt-requirements; then
+          apt_changed=true
+       fi
+       if [[ "$apt_changed" == true ]]; then
+          printf "${GREEN}%s${RESET}\n" "New apt requirements for this version, installing now ($APT_FILE)"
           #sudo /usr/local/bin/aptfile apt-requirements
 	        #Uncomment if running from repo scripts/sbtools, comment out above line
-          sudo scripts/sbtools/aptfile apt-requirements
+          sudo scripts/sbtools/aptfile "$APT_FILE"
        else
           printf "${YELLOW}%s${RESET}\n" "No new apt required to be installed."
       fi
     else
-          printf "${RED}%s${RESET}\n" "No apt-requirements found"
+          printf "${RED}%s${RESET}\n" "No $APT_FILE found"
     fi
   fi
   fi

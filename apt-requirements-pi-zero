@@ -1,0 +1,37 @@
+#!/usr/bin/env aptfile
+
+# Pi Zero / Zero W apt set. Same build tools as apt-requirements, without
+# pandas, pygame, and the emulator packages. Those are large, and this board
+# has 512MB of RAM. numpy stays: the renderer imports it, and the Debian
+# package is already built for armv6.
+
+update
+
+package "build-essential"
+package "python3-setuptools"
+package "python3-pip"
+package "python3-dev"
+package "python3-virtualenv"
+package "python3-venv"
+package "python3-numpy"
+package "python3-gpiozero"
+package "python3-lxml"
+package "cython3"
+package "libcairo2"
+package "libcairo2-dev"
+package "libopenblas0"
+package "libraqm-dev"
+package "libjpeg-dev"
+package "zlib1g-dev"
+package "libfreetype6-dev"
+package "direnv"
+package "zsh"
+package "cmake"
+package "dbus"
+package "libdbus-1-dev"
+package "libdbus-glib-1-dev"
+package "libgirepository1.0-dev"
+package "jq"
+package "pastebinit"
+
+echo "ALL GOOD TO GO"

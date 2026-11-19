@@ -32,6 +32,16 @@ Click on button to go to release notes.
 * Raspberry Pi 3A+, 3B
 * Raspberry Pi 4
 * Raspberry Pi 5 (experimental and best with 128x64 boards)
+* Raspberry Pi Zero W / Zero WH / original Zero, and Pi 1 (best effort, 64x32 only)
+
+> [!NOTE]
+> A Pi Zero W Rev 1.1 is a single-core ARMv6 board with 512MB of RAM. `scripts/install.sh` used to stop on `armv6l`. It now continues: it adds a 1GB swap file, turns analog audio off (it shares PWM with the panel), skips the armv7 `nhl_setup` binary, and installs `requirements-pi-zero.txt`.
+>
+> Use **32-bit** Raspberry Pi OS Lite (Bookworm or Trixie). 64-bit images do not boot on this CPU. Use a 64x32 panel with its own 5V supply. On startup the scoreboard drops the matrix load (7 PWM bits, GPIO slowdown 0, refresh capped at 100Hz) so Python and Wi-Fi still get time on the one core. Pass `--led-no-pi-tune` to keep the stock timing.
+>
+> ```
+> sudo ~/nhlsb-venv/bin/python3 src/main.py --led-gpio-mapping=adafruit-hat-pwm --led-rows=32 --led-cols=64 --led-brightness=60
+> ```
 ## Only Supported RGB Adapters
 * Adafruit RGB Bonnet or HAT
 * Adafruit Triple LED Matrix Bonnet
