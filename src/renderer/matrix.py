@@ -296,6 +296,10 @@ class Matrix:
 
         self.use_canvas = False
 
+        # RGBMatrixEmulator 0.20's SetImage reads self.canvas before creating it.
+        if driver.is_emulated() and not hasattr(matrix, "canvas"):
+            matrix.CreateFrameCanvas()
+
         if (self.use_canvas):
             self.canvas = matrix.CreateFrameCanvas()
 
