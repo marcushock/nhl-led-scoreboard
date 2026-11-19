@@ -38,10 +38,76 @@ install_fastfetch() {
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 cd "${DIR}/../.."
 
-# Check for armv6l architecture
+boot_config_path() {
+  if [ -f /boot/firmware/config.txt ]; then
+    echo /boot/firmware/config.txt
+  elif [ -f /boot/config.txt ]; then
+    echo /boot/config.txt
+  fi
+}
+
+# A 512MB Pi will OOM while apt, pip, or the matrix library compile.
+# A real swap file is used on purpose: zram swap is compressed RAM, and this
+# board does not have RAM to spare.
+ensure_build_swap() {
+  local swap_kb
+  swap_kb=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
+  if [ "${swap_kb:-0}" -ge 1048576 ]; then
+    echo "Swap is already ${swap_kb} kB."
+    return
+  fi
+  if [ -f /var/swap-nhlsb ]; then
+    sudo swapon /var/swap-nhlsb || true
+    return
+  fi
+  tput bold; echo "$(tput setaf 3)Adding a 1GB swap file at /var/swap-nhlsb. Compiling the matrix library needs more than 512MB of RAM.$(tput setaf 9)" ; tput sgr0
+  if ! sudo fallocate -l 1G /var/swap-nhlsb; then
+    sudo dd if=/dev/zero of=/var/swap-nhlsb bs=1M count=1024 status=progress
+  fi
+  sudo chmod 600 /var/swap-nhlsb
+  sudo mkswap /var/swap-nhlsb
+  sudo swapon /var/swap-nhlsb
+  if ! grep -q '/var/swap-nhlsb' /etc/fstab; then
+    echo '/var/swap-nhlsb none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null
+  fi
+}
+
+# Analog audio and the LED panel share the PWM block. The panel does not use the GPU.
+tune_pi_zero_config() {
+  local cfg
+  cfg="$(boot_config_path)"
+  if [ -z "$cfg" ]; then
+    echo "No config.txt found. Skip the Pi Zero boot tweaks."
+    return
+  fi
+  if grep -q 'nhl-led-scoreboard pi-zero' "$cfg"; then
+    return
+  fi
+  tput bold; echo "$(tput setaf 3)Turning analog audio off and releasing GPU memory in $cfg. Reboot before driving the panel.$(tput setaf 9)" ; tput sgr0
+  sudo tee -a "$cfg" >/dev/null <<'EOF'
+
+# nhl-led-scoreboard pi-zero
+# Analog audio uses the same PWM block as the LED matrix.
+dtparam=audio=off
+# The matrix does not use the GPU. Leave the RAM for Python.
+gpu_mem=16
+EOF
+}
+
+# Original Pi Zero / Zero W / Pi 1. Pi Zero 2 W reports armv7l or aarch64.
+IS_PI_ZERO=false
 if [ "$ARCH" = "armv6l" ]; then
-  tput bold; echo "$(tput setaf 9)Sorry, This project will only run on a Raspberry Pi Zero 2w to a Raspberry Pi 5. Raspberry Pi Zero is not supported.$(tput setaf 9)" ; tput sgr0
-  exit 1
+  IS_PI_ZERO=true
+  tput bold
+  echo "$(tput setaf 3)Raspberry Pi Zero / Pi 1 (armv6) detected. Continuing with the best-effort install."
+  echo "Use 32-bit Raspberry Pi OS Lite (Bookworm or Trixie). 64-bit images do not boot on this board."
+  echo "Use a 64x32 panel, and power the panel from its own 5V supply."
+  echo "nhl_setup is built for armv7 and 64-bit ARM, so edit config/config.json yourself."
+  tput sgr0
+  if dpkg --compare-versions "$(py_ver)" lt "3.11.0"; then
+    tput bold; echo "$(tput setaf 9)Python $(py_ver) is older than 3.11. Install 32-bit Raspberry Pi OS Bookworm or Trixie Lite and run this again.$(tput setaf 9)" ; tput sgr0
+    exit 1
+  fi
 fi
 
 # Check for Raspberry Pi 5
@@ -58,9 +124,17 @@ fi
 
 tput bold; echo "$(tput setaf 2)Installing required OS dependencies. This may take some time (10-20 minutes-ish)...$(tput setaf 9)" ; tput sgr0
 
+APT_REQUIREMENTS="apt-requirements"
+if [ "$IS_PI_ZERO" = true ]; then
+  ensure_build_swap
+  tune_pi_zero_config
+  APT_REQUIREMENTS="apt-requirements-pi-zero"
+  export MAKEFLAGS="-j1"
+  export PIP_NO_CACHE_DIR=1
+fi
 
 #Install all apt requirements using aptfile
-sudo $DIR/aptfile apt-requirements
+sudo $DIR/aptfile "$APT_REQUIREMENTS"
 # Check the exit code of the command above
 if [ $? -ne 0 ]; then
     echo "❌ Error: Failed to install all apt requirements. Try rerunning install.sh again." >&2
@@ -126,6 +200,9 @@ TEXT0
   if [ "$IS_PI5" = true ]; then
   tput bold; echo "$(tput setaf 2)Installing requirements for Raspberry Pi 5...$(tput setaf 9)" ; tput sgr0
   pip3 install -r requirements-pi5.txt
+elif [ "$IS_PI_ZERO" = true ]; then
+  tput bold; echo "$(tput setaf 2)Installing the smaller Pi Zero requirement set...$(tput setaf 9)" ; tput sgr0
+  pip3 install -U -r requirements-pi-zero.txt --extra-index-url https://www.piwheels.org/simple
 else
   pip3 install -U -r requirements.txt
 fi
@@ -143,6 +220,12 @@ fi
   tput bold; echo "$(tput setaf 4).................PYTHON LOOKS LIKE.....................$(tput setaf 9)" ; tput sgr0
   tput bold; echo "$(tput setaf 1)sudo $HOME/nhlsb-venv/bin/python3 $(tput setaf 9)" ; tput sgr0
   tput bold; echo "$(tput setaf 4)...................................................$(tput setaf 9)" ; tput sgr0
+elif [ "$IS_PI_ZERO" = true ]; then
+  sudo pip3 install -U -r requirements-pi-zero.txt --extra-index-url https://www.piwheels.org/simple
+  if [ $? -ne 0 ]; then
+      echo "❌ Error: Failed to install all python requirements. Try rerunning install.sh again." >&2
+      exit 1
+  fi
 else
   sudo pip3 install -U -r requirements.txt
    # Check the exit code of the command above
@@ -168,7 +251,11 @@ if [ "$IS_PI5" = false ]; then
 
     # cd ../../ || exit
 
-    make build-python PYTHON="$(command -v python3)"
+    if [ "$IS_PI_ZERO" = true ]; then
+      make -j1 build-python PYTHON="$(command -v python3)"
+    else
+      make build-python PYTHON="$(command -v python3)"
+    fi
 
     if [ -n "$VIRTUAL_ENV" ]; then
       #make install-python PYTHON="$(command -v python3)"
@@ -211,7 +298,9 @@ sudo modprobe -r snd_bcm2835
 # Rebuild module dependacy
 sudo depmod -a
 
-if ! grep -q isolcpus /boot/firmware/cmdline.txt; then
+if [ "$IS_PI_ZERO" = true ]; then
+  tput bold; echo "$(tput setaf 4)Leaving the single core shared by the matrix refresh and the scoreboard.$(tput setaf 9)" ; tput sgr0
+elif [ -f /boot/firmware/cmdline.txt ] && ! grep -q isolcpus /boot/firmware/cmdline.txt; then
  tput bold; echo "$(tput setaf 4)Optimizing pi for python (isolating cpus)...$(tput setaf 9)" ; tput sgr0
  sudo sed -i 's/$/ isolcpus=3/' /boot/firmware/cmdline.txt
 fi
@@ -226,7 +315,10 @@ git pull
 
 # Install nhl_setup binary based on architecture
 tput bold; echo "$(tput setaf 2)Installing nhl_setup binary...$(tput setaf 9)" ; tput sgr0
-if [[ "$DEBIAN_VERSION" == "13"* ]]; then
+if [ "$IS_PI_ZERO" = true ]; then
+    echo "Skipping nhl_setup. The published binaries are armv7 and 64-bit ARM, which this CPU cannot run."
+    echo "Create config/config.json by hand (team, location, and which boards to show)."
+elif [[ "$DEBIAN_VERSION" == "13"* ]]; then
     if [ "$ARCH" = "aarch64" ]; then
         echo "64-bit ARM architecture detected. Downloading and installing nhl_setup..."
         wget https://github.com/falkyre/nhl-setup/releases/latest/download/nhl_setup.64 -O nhl_setup
@@ -256,5 +348,10 @@ tput bold; echo "$(tput setaf 6)If you didn't see any errors above, everything s
 echo "$(tput bold)$(tput smso)$(tput setaf 2)Installation complete!$(tput sgr0) Reboot, then Play around with the examples in nhl-led-scoreboard/submodules/matrix/bindings/python/samples to make sure your matrix is working."
 if [ "$IS_PI5" = true ]; then
   echo "$(tput bold)$(tput smso)$(tput setaf 2)Running on the Raspberry Pi 5, use python3 src/pi5_launcher.py to launch the scoreboard!$(tput sgr0)"
+fi
+if [ "$IS_PI_ZERO" = true ]; then
+  echo "$(tput bold)$(tput smso)$(tput setaf 2)Pi Zero: reboot, then start with a 64x32 panel:$(tput sgr0)"
+  echo "sudo $HOME/nhlsb-venv/bin/python3 src/main.py --led-gpio-mapping=adafruit-hat-pwm --led-rows=32 --led-cols=64 --led-brightness=60"
+  echo "Startup applies low-CPU matrix timing on this board. Pass --led-no-pi-tune to keep the stock timing."
 fi
 
