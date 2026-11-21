@@ -313,11 +313,21 @@ git reset --hard
 git fetch origin --prune
 git pull
 
+bootstrap_scoreboard_config() {
+  if [ ! -f config/config.json ] && [ -f config/config.json.sample ]; then
+    cp config/config.json.sample config/config.json
+    tput bold
+    echo "$(tput setaf 3)Created config/config.json from the sample file.$(tput setaf 9)"
+    tput sgr0
+  fi
+}
+bootstrap_scoreboard_config
+
 # Install nhl_setup binary based on architecture
 tput bold; echo "$(tput setaf 2)Installing nhl_setup binary...$(tput setaf 9)" ; tput sgr0
 if [ "$IS_PI_ZERO" = true ]; then
     echo "Skipping nhl_setup. The published binaries are armv7 and 64-bit ARM, which this CPU cannot run."
-    echo "Create config/config.json by hand (team, location, and which boards to show)."
+    echo "After install, run: scripts/config_setup.sh  (or edit config/config.json by hand)."
 elif [[ "$DEBIAN_VERSION" == "13"* ]]; then
     if [ "$ARCH" = "aarch64" ]; then
         echo "64-bit ARM architecture detected. Downloading and installing nhl_setup..."
@@ -350,8 +360,12 @@ if [ "$IS_PI5" = true ]; then
   echo "$(tput bold)$(tput smso)$(tput setaf 2)Running on the Raspberry Pi 5, use python3 src/pi5_launcher.py to launch the scoreboard!$(tput sgr0)"
 fi
 if [ "$IS_PI_ZERO" = true ]; then
-  echo "$(tput bold)$(tput smso)$(tput setaf 2)Pi Zero: reboot, then start with a 64x32 panel:$(tput sgr0)"
-  echo "sudo $HOME/nhlsb-venv/bin/python3 src/main.py --led-gpio-mapping=adafruit-hat-pwm --led-rows=32 --led-cols=64 --led-brightness=60"
-  echo "Startup applies low-CPU matrix timing on this board. Pass --led-no-pi-tune to keep the stock timing."
+  echo "$(tput bold)$(tput smso)$(tput setaf 2)Pi Zero: configure, then reboot and test the panel:$(tput setaf 9)"
+  echo "  scripts/config_setup.sh"
+  echo "  sudo $HOME/nhlsb-venv/bin/python3 src/main.py --led-gpio-mapping=adafruit-hat-pwm --led-rows=32 --led-cols=64 --led-brightness=60"
+  echo "$(tput setaf 2)Startup applies low-CPU matrix timing on this board. Pass --led-no-pi-tune to keep the stock timing.$(tput setaf 9)"
+fi
+if [ ! -f ./nhl_setup ]; then
+  echo "Configure teams and location with: scripts/config_setup.sh  (or run ./nhl_setup on Pi 2/3/4/5)."
 fi
 

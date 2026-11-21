@@ -220,7 +220,9 @@ class ScoreboardConfig:
                 debug.info("config.json passes validation")
             else:
                 debug.warning("config.json fails validation: error: [{0}]".format(msg))
-                debug.warning("Rerun the nhl_setup app to create a valid config.json")
+                debug.warning(
+                    "Fix config.json with ./nhl_setup or scripts/config_setup.sh"
+                )
                 sys.exit(1)
 
         return reference_config

@@ -91,6 +91,10 @@ done
 
 function download_nhl_setup() {
   printf "${GREEN}%s${RESET}\n" "$1"
+  if [ "$ARCH" = "armv6l" ]; then
+    printf "${YELLOW}%s${RESET}\n" "nhl_setup is not built for armv6 (Pi Zero W). Use scripts/config_setup.sh instead."
+    return 0
+  fi
   if [[ "$DEBIAN_VERSION" == "13"* ]]; then
       if [ "$ARCH" = "aarch64" ]; then
           echo "64-bit ARM architecture detected. Downloading and installing nhl_setup..."

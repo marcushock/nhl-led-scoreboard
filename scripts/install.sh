@@ -76,6 +76,11 @@ install of the NHL LED Scoreboard or an Upgrade of an existing installation\
   return 0
 }
 
+do_configure() {
+  scripts/config_setup.sh
+  return 0
+}
+
 calc_wt_size
 
 backtitle="$(get_model) [$(deb_name)] [Python: $(py_loc) V$(py_ver) $(show_virtual_env)]"
@@ -85,7 +90,8 @@ while true; do
         FUN=$(whiptail --title "NHL LED Scoreboard Install/Upgrade Tool" --backtitle "$backtitle" --menu "Options" $WT_HEIGHT $WT_WIDTH $WT_MENU_HEIGHT --cancel-button Finish --ok-button Select \
         "1 New Install" "Use this if this is your first time installing" \
         "2 Upgrade" "Use this if you are upgrading" \
-        "3 Help" "Show help for this tool" \
+        "3 Configure" "Set teams, location, and live mode (config.json)" \
+        "4 Help" "Show help for this tool" \
         3>&1 1>&2 2>&3)
 
 	RET=$?
@@ -96,7 +102,8 @@ while true; do
           case "$FUN" in
             1\ *) do_install ;;
             2\ *) do_upgrade ;;
-            3\ *) do_help ;;
+            3\ *) do_configure ;;
+            4\ *) do_help ;;
             *) whiptail --msgbox "Programmer error: unrecognized option" 20 60 1 ;;
           esac || whiptail --msgbox "There was an error running option $FUN" 20 60 1
         else
