@@ -42,6 +42,25 @@ Click on button to go to release notes.
 > ```
 > sudo ~/nhlsb-venv/bin/python3 src/main.py --led-gpio-mapping=adafruit-hat-pwm --led-rows=32 --led-cols=64 --led-brightness=60
 > ```
+>
+> **Cloning on the Pi:** A full `git clone` (all history) often freezes or reboots this board. Git spikes RAM use while unpacking the packfile. Always use `--depth 1`, run one heavy job at a time (no `apt` or `install.sh` while cloning), and prefer this repo's install script on a branch that adds swap — stock upstream `main` does not.
+>
+> ```bash
+> cd ~
+> git clone --depth 1 https://github.com/falkyre/nhl-led-scoreboard.git
+> cd nhl-led-scoreboard
+> # optional: shallow fetch another branch
+> git fetch origin BRANCH_NAME:refs/heads/BRANCH_NAME --depth 1
+> git checkout BRANCH_NAME
+> ```
+>
+> If cloning on the Pi still fails, shallow-clone on a PC and copy the tree with `rsync` or `scp`, or add swap before trying again:
+>
+> ```bash
+> sudo fallocate -l 1G /var/swap-nhlsb 2>/dev/null || sudo dd if=/dev/zero of=/var/swap-nhlsb bs=1M count=1024
+> sudo chmod 600 /var/swap-nhlsb && sudo mkswap /var/swap-nhlsb && sudo swapon /var/swap-nhlsb
+> grep -q swap-nhlsb /etc/fstab || echo '/var/swap-nhlsb none swap sw 0 0' | sudo tee -a /etc/fstab
+> ```
 ## Only Supported RGB Adapters
 * Adafruit RGB Bonnet or HAT
 * Adafruit Triple LED Matrix Bonnet
@@ -73,7 +92,7 @@ The following makes the assumption that you are comfortable with a Linux termina
 ## Clean Install
 1. Read the release notes of the release you are installing.  There can be information on breaking changes or procedures that are needed for the release.
 2. Install git on your fresh OS.  `sudo apt install git -y`
-3. Clone this repository with git :  `git clone --depth 1 https://github.com/falkyre/nhl-led-scoreboard.git` for only latest version (quickest way to clone but you don't get any other branches)
+3. Clone this repository with git: `git clone --depth 1 https://github.com/falkyre/nhl-led-scoreboard.git` for only the latest commit on the default branch (fastest clone; you do not get full history or other branches until you shallow-fetch them). On a **Pi Zero W**, use `--depth 1` only — see the Pi Zero note under [supported hardware](#only-supported-raspberry-pi-hardware).
 4. Change to the nhl-led-scoreboard directory
 5. Run the scripts/install.sh script.  Pay attention to it's output as there is critical information if there are any errors.
 6. If the install.sh script has no failures, you can try the samples to see if your board works.  If the samples don't work, the scoreboard code won't either.  
